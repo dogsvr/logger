@@ -1,0 +1,56 @@
+{
+  "name": "@dogsvr/logger",
+  "version": "0.4.0",
+  "description": "High-performance NDJSON logger for the @dogsvr/* ecosystem, built on pino. Two-mode (inline / central isolate) for K8s + bare-metal compatibility.",
+  "keywords": [
+    "dogsvr",
+    "logger",
+    "pino",
+    "ndjson",
+    "worker-threads"
+  ],
+  "exports": {
+    "./main_thread": {
+      "types": "./dist/main_thread/index.d.ts",
+      "default": "./dist/main_thread/index.js"
+    },
+    "./worker_thread": {
+      "types": "./dist/worker_thread/index.d.ts",
+      "default": "./dist/worker_thread/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "main_thread",
+    "worker_thread",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsc"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dogsvr/logger.git"
+  },
+  "author": "rowanzhu",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/dogsvr/logger/issues"
+  },
+  "homepage": "https://github.com/dogsvr/logger#readme",
+  "dependencies": {
+    "pino": "^10.3.1",
+    "sonic-boom": "^4.2.1"
+  },
+  "peerDependencies": {
+    "@dogsvr/dogsvr": "^0.4.0"
+  },
+  "devDependencies": {
+    "@dogsvr/dogsvr": "^0.4.0",
+    "@types/node": "^24.12.2",
+    "typescript": "^6.0.3"
+  }
+}
