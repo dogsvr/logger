@@ -17,6 +17,7 @@ export class InlineMainStrategy implements MainStrategy {
                 : {dest: this.destination, mkdir: true}),
             sync: false,
             minLength: 4096,
+            periodicFlush: 1000,
         });
     }
 

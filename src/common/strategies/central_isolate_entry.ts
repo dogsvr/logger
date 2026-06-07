@@ -98,6 +98,7 @@ function init(msg: InitMsg): void {
             : {dest: msg.destination, mkdir: true}),
         sync: false,
         minLength: 4096,
+        periodicFlush: 1000,
     });
     sonic.on("error", (err) => {
         try { (sonic as unknown as {reopen?: (file?: string) => void}).reopen?.(); } catch {

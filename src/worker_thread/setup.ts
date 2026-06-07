@@ -1,7 +1,6 @@
 import pino, {type Logger as PinoLogger, type LoggerOptions} from "pino";
 import {registerWorkerLogger} from "@dogsvr/dogsvr/worker_thread";
-import {defaultBase} from "../common/thread_identity";
-import {wrapPino} from "../common/pino_impl";
+import {defaultBase, wrapPino} from "../common/pino_adapter";
 import {installShutdownHooks} from "../common/shutdown";
 import type {WorkerSetupOptions} from "../common/options";
 import type {WorkerStrategy} from "../common/strategies/strategy";
@@ -14,7 +13,7 @@ function buildPinoOptions(opts: WorkerSetupOptions): LoggerOptions {
     return {
         level: opts.level,
         base: {...defaultBase(), ...(opts.base ?? {})},
-        timestamp: pino.stdTimeFunctions.isoTime,
+        timestamp: pino.stdTimeFunctions.epochTime,
     };
 }
 

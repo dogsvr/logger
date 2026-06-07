@@ -18,6 +18,7 @@ export class InlineWorkerStrategy implements WorkerStrategy {
                 : {dest: destination, mkdir: true}),
             sync: false,
             minLength: 4096,
+            periodicFlush: 1000,
         });
     }
 

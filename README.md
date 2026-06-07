@@ -37,8 +37,7 @@ import {log} from "@dogsvr/dogsvr/worker_thread";
 const init = (workerData as {loggerInit?: WorkerInitPayload}).loggerInit!;
 setupLoggerInWorker({
     ...init,                         // mode + port (central) or destination (inline)
-    level: "info",
-    base: {role: "worker"},
+    level: "info"
 });
 
 log.info("worker ready");
@@ -49,10 +48,12 @@ If you don't use worker_threads, omit the worker step — `setupLogger()` alone 
 Output (NDJSON, one JSON object per line):
 
 ```
-{"level":30,"time":"2026-05-31T10:23:45.123Z","pid":12345,"hostname":"box1","thread":"main","svrId":"zonesvr-1","msg":"server started"}
-{"level":30,"time":"2026-05-31T10:23:45.456Z","pid":12345,"hostname":"box1","thread":"main","svrId":"zonesvr-1","userId":42,"msg":"user joined"}
-{"level":50,"time":"2026-05-31T10:23:45.789Z","pid":12345,"hostname":"box1","thread":"main","svrId":"zonesvr-1","err":{"type":"Error","message":"boom","stack":"Error: boom\n    at ..."},"txnId":99,"msg":"transaction failed"}
+{"level":30,"time":1748687025123,"pid":12345,"thread":"main","svrId":"zonesvr-1","msg":"server started"}
+{"level":30,"time":1748687025456,"pid":12345,"thread":"main","svrId":"zonesvr-1","userId":42,"msg":"user joined"}
+{"level":50,"time":1748687025789,"pid":12345,"thread":"main","svrId":"zonesvr-1","err":{"type":"Error","message":"boom","stack":"Error: boom\n    at ..."},"txnId":99,"msg":"transaction failed"}
 ```
+
+`time` is epoch milliseconds (pino default — fastest serializer; aggregators consume it natively). For human-friendly viewing pipe through `pino-pretty -t "SYS:HH:MM:ss.l"`. `hostname` is intentionally omitted from per-line base bindings — in K8s / Docker the pod/container name lives in outer log metadata, and on bare-metal it is invariant; saving ~30-50 bytes per line is worth more than the redundant repetition.
 
 ## Package layout
 
