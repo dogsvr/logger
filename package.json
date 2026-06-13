@@ -1,6 +1,6 @@
 {
   "name": "@dogsvr/logger",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "High-performance NDJSON logger for the @dogsvr/* ecosystem, built on pino. Two-mode (inline / central isolate) for K8s + bare-metal compatibility.",
   "keywords": [
     "dogsvr",
@@ -29,7 +29,8 @@
     "README.md"
   ],
   "scripts": {
-    "build": "rm -rf dist && tsc"
+    "build": "rm -rf dist && tsc",
+    "check:dedup": "test $(find node_modules -name sonic-boom -type d 2>/dev/null | wc -l) -eq 1 || { echo 'sonic-boom is not deduped:'; npm ls sonic-boom; exit 1; }"
   },
   "repository": {
     "type": "git",
