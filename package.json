@@ -43,6 +43,10 @@
   },
   "homepage": "https://github.com/dogsvr/logger#readme",
   "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/api-logs": "^0.219.0",
+    "@opentelemetry/exporter-logs-otlp-http": "^0.219.0",
+    "@opentelemetry/sdk-logs": "^0.219.0",
     "pino": "^10.3.1",
     "sonic-boom": "^4.2.1"
   },

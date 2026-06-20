@@ -1,6 +1,6 @@
 import pino, {type Logger as PinoLogger, type LoggerOptions} from "pino";
-import {registerWorkerLogger} from "@dogsvr/dogsvr/worker_thread";
-import {defaultBase, wrapPino} from "../common/pino_adapter";
+import {registerWorkerLogger, getSpanSink} from "@dogsvr/dogsvr/worker_thread";
+import {defaultBase, wrapPino, traceContextMixin} from "../common/pino_adapter";
 import {installShutdownHooks} from "../common/shutdown";
 import type {WorkerSetupOptions} from "../common/options";
 import type {WorkerStrategy} from "../common/strategies/strategy";
@@ -14,6 +14,7 @@ function buildPinoOptions(opts: WorkerSetupOptions): LoggerOptions {
         level: opts.level,
         base: {...defaultBase(), ...(opts.base ?? {})},
         timestamp: pino.stdTimeFunctions.epochTime,
+        mixin: traceContextMixin(getSpanSink),
     };
 }
 

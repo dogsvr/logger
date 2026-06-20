@@ -27,7 +27,7 @@ export class CentralMainStrategy implements MainStrategy {
         this.centralWorker.on("error", (err) => {
             try { process.stderr.write(`{"level":60,"msg":"central isolate error: ${String(err)}"}\n`); } catch { /* ignore */ }
         });
-        // SPOF degradation: central isolate dies → fall back to stderr sync write.
+        // SPOF degradation: central isolate dies → fall back to stderr.
         this.centralWorker.on("exit", () => {
             this.mainSink = stderrFallback();
         });
@@ -36,6 +36,7 @@ export class CentralMainStrategy implements MainStrategy {
             destination: this.destination,
             highWaterMark: high,
             lowWaterMark: low,
+            otel: opts.otel,
         });
 
         const ch = new MessageChannel();
@@ -54,7 +55,7 @@ export class CentralMainStrategy implements MainStrategy {
     }
 
     releaseWorkerPort(_worker: Worker): void {
-        // port.on('close') in the central isolate handles cleanup automatically.
+        // port.on('close') in the central isolate handles cleanup.
     }
 
     workerInitFor(port: MessagePort | undefined): WorkerInitPayload {

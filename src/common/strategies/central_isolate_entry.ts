@@ -1,17 +1,28 @@
 import SonicBoom from "sonic-boom";
 import {parentPort, MessagePort} from "worker_threads";
+import {trace, ROOT_CONTEXT, type Context} from "@opentelemetry/api";
+import {SeverityNumber} from "@opentelemetry/api-logs";
+import {LoggerProvider, BatchLogRecordProcessor} from "@opentelemetry/sdk-logs";
+import {OTLPLogExporter} from "@opentelemetry/exporter-logs-otlp-http";
+import {resourceFromAttributes} from "@opentelemetry/resources";
 
-// Central isolate: single writer drains NDJSON lines from all business threads + main
-// into one sonic-boom. Accepts MessagePorts via postMessage control protocol:
-//   { type: 'init', destination, highWaterMark, lowWaterMark }
+// Central isolate: single worker drains NDJSON lines from all threads into one sonic-boom.
+// Control protocol (postMessage):
+//   { type: 'init', destination, highWaterMark, lowWaterMark, otel? }
 //   { type: 'attach', port }
 //   { type: 'flush' }
 //   { type: 'shutdown' }
+interface OtelInitFields {
+    otlpEndpoint: string;
+    serviceName: string;
+    resourceAttributes?: Record<string, string>;
+}
 interface InitMsg {
     type: "init";
     destination: string | number;
     highWaterMark: number;
     lowWaterMark: number;
+    otel?: OtelInitFields;
 }
 interface AttachMsg { type: "attach"; port: MessagePort }
 interface FlushMsg { type: "flush" }
@@ -24,6 +35,9 @@ let lowWaterMark = 1_000_000;
 let dropMode = false;
 const droppedByLevel = new Map<number, number>();
 const attachedPorts = new Set<MessagePort>();
+
+let otelLogger: ReturnType<LoggerProvider["getLogger"]> | null = null;
+let otelProvider: LoggerProvider | null = null;
 
 let metaTimer: NodeJS.Timeout | null = null;
 
@@ -54,7 +68,6 @@ function checkBackPressure(): void {
 }
 
 function extractLevel(line: string): number {
-    // Cheap level extraction: look for `"level":N` near the start of NDJSON.
     const idx = line.indexOf("\"level\":");
     if (idx < 0 || idx > 64) return 30;
     const start = idx + 8;
@@ -62,6 +75,50 @@ function extractLevel(line: string): number {
     while (end < line.length && line.charCodeAt(end) >= 0x30 && line.charCodeAt(end) <= 0x39) end++;
     if (end === start) return 30;
     return Number(line.slice(start, end));
+}
+
+/**
+ * Map pino numeric level to otel SeverityNumber.
+ * (10=trace, 20=debug, 30=info, 40=warn, 50=error, 60=fatal)
+ */
+function pinoLevelToSeverity(level: number): SeverityNumber {
+    if (level >= 60) return SeverityNumber.FATAL;
+    if (level >= 50) return SeverityNumber.ERROR;
+    if (level >= 40) return SeverityNumber.WARN;
+    if (level >= 30) return SeverityNumber.INFO;
+    if (level >= 20) return SeverityNumber.DEBUG;
+    return SeverityNumber.TRACE;
+}
+
+function emitOtel(line: string): void {
+    if (!otelLogger) return;
+    let obj: Record<string, unknown>;
+    try { obj = JSON.parse(line); } catch { return; }
+    const level = typeof obj.level === "number" ? obj.level : 30;
+    const traceId = typeof obj.traceId === "string" ? obj.traceId : undefined;
+    const spanId = typeof obj.spanId === "string" ? obj.spanId : undefined;
+
+    let ctx: Context | undefined;
+    if (traceId && spanId) {
+        ctx = trace.setSpanContext(ROOT_CONTEXT, {traceId, spanId, traceFlags: 1});
+    }
+
+    const attributes: Record<string, string> = {};
+    for (const k of Object.keys(obj)) {
+        if (k === "msg" || k === "traceId" || k === "spanId") continue;
+        const v = obj[k];
+        if (v == null) continue;
+        attributes[k] = typeof v === "string" ? v : JSON.stringify(v);
+    }
+
+    try {
+        otelLogger.emit({
+            severityNumber: pinoLevelToSeverity(level),
+            body: typeof obj.msg === "string" ? obj.msg : line,
+            attributes,
+            context: ctx,
+        });
+    } catch { /* ignore */ }
 }
 
 function onLine(line: string): void {
@@ -75,6 +132,7 @@ function onLine(line: string): void {
         }
     }
     sonic.write(line);
+    emitOtel(line);
     checkBackPressure();
 }
 
@@ -87,6 +145,19 @@ function attachPort(port: MessagePort): void {
         attachedPorts.delete(port);
     });
     port.start?.();
+}
+
+function initOtel(otel: OtelInitFields): void {
+    const resource = resourceFromAttributes({
+        "service.name": otel.serviceName,
+        ...(otel.resourceAttributes ?? {}),
+    });
+    const exporter = new OTLPLogExporter({url: otel.otlpEndpoint});
+    otelProvider = new LoggerProvider({
+        resource,
+        processors: [new BatchLogRecordProcessor(exporter)],
+    });
+    otelLogger = otelProvider.getLogger("@dogsvr/logger", "1.0.0");
 }
 
 function init(msg: InitMsg): void {
@@ -105,11 +176,13 @@ function init(msg: InitMsg): void {
             try { process.stderr.write(`{"level":60,"msg":"central sonic error: ${String(err)}"}\n`); } catch { /* ignore */ }
         }
     });
+    if (msg.otel) initOtel(msg.otel);
     startMetaReporter();
 }
 
 function flushAll(): void {
     try { (sonic as unknown as {flushSync?: () => void} | null)?.flushSync?.(); } catch { /* ignore */ }
+    try { otelProvider?.forceFlush(); } catch { /* ignore */ }
 }
 
 function shutdown(): void {
@@ -119,6 +192,7 @@ function shutdown(): void {
     }
     attachedPorts.clear();
     flushAll();
+    try { otelProvider?.shutdown(); } catch { /* ignore */ }
     process.exit(0);
 }
 

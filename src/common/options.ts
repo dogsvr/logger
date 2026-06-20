@@ -3,7 +3,16 @@ import type {Level} from "@dogsvr/dogsvr/main_thread";
 
 export type Mode = "central" | "inline";
 
-/** `level` is the only field dogsvr core inspects; everything else is pino-specific. */
+/** Shipping logs to an OTLP backend (Jaeger / Tempo / SaaS). Central mode only. */
+export interface OtelLogsOptions {
+    /** OTLP HTTP endpoint, e.g. http://localhost:4318/v1/logs. */
+    otlpEndpoint: string;
+    serviceName: string;
+    /** Extra resource attributes; merged with serviceName + defaults. */
+    resourceAttributes?: Record<string, string>;
+}
+
+/** `level` is the only field dogsvr core inspects. */
 export interface SetupOptions {
     mode: Mode;
     level: Level;
@@ -11,6 +20,8 @@ export interface SetupOptions {
     base?: Record<string, unknown>;
     centralBufferHighWaterMark?: number;
     centralBufferLowWaterMark?: number;
+    /** When set, central isolate also ships logs to OTLP. Throws on inline mode. */
+    otel?: OtelLogsOptions;
 }
 
 export interface WorkerSetupOptions {

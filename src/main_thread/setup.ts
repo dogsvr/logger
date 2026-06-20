@@ -1,6 +1,6 @@
 import pino, {type Logger as PinoLogger, type LoggerOptions} from "pino";
-import {registerLogger} from "@dogsvr/dogsvr/main_thread";
-import {defaultBase, wrapPino} from "../common/pino_adapter";
+import {registerLogger, getSpanSink} from "@dogsvr/dogsvr/main_thread";
+import {defaultBase, wrapPino, traceContextMixin} from "../common/pino_adapter";
 import {installShutdownHooks} from "../common/shutdown";
 import type {SetupOptions} from "../common/options";
 import type {MainStrategy} from "../common/strategies/strategy";
@@ -15,6 +15,7 @@ function buildPinoOptions(opts: SetupOptions): LoggerOptions {
         level: opts.level,
         base: {...defaultBase(), ...(opts.base ?? {})},
         timestamp: pino.stdTimeFunctions.epochTime,
+        mixin: traceContextMixin(getSpanSink),
     };
 }
 
@@ -24,6 +25,10 @@ export function setupLogger(opts: SetupOptions): void {
         throw new Error("setupLogger already called");
     }
     setupCalled = true;
+
+    if (opts.otel && opts.mode !== "central") {
+        throw new Error(`otel option requires mode="central", got mode="${opts.mode}"`);
+    }
 
     let strategy: MainStrategy;
     switch (opts.mode) {
@@ -41,3 +46,13 @@ export function setupLogger(opts: SetupOptions): void {
     registerLogger(wrapPino(p), makeHub(strategy));
     installShutdownHooks(strategy);
 }
+
+/**
+ * Sugar over setupLogger that pins mode=central and forwards otel options.
+ */
+export function setupLoggerWithOtel(
+    opts: Omit<SetupOptions, "mode" | "otel"> & {otel: NonNullable<SetupOptions["otel"]>},
+): void {
+    setupLogger({...opts, mode: "central"});
+}
+
