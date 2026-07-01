@@ -4,7 +4,6 @@ import type {Worker, MessagePort} from "worker_threads";
 import type {SetupOptions, WorkerInitPayload} from "../options";
 import type {MainStrategy} from "./strategy";
 
-/** Direct sonic-boom to destination fd; no central isolate or MessagePort. */
 export class InlineMainStrategy implements MainStrategy {
     private sonic: InstanceType<typeof SonicBoom>;
     private readonly destination: string | number;
@@ -36,11 +35,15 @@ export class InlineMainStrategy implements MainStrategy {
     }
 
     bufferedBytes(): number {
-        const len = (this.sonic as unknown as {writableLength?: number}).writableLength;
-        return typeof len === "number" ? len : 0;
+        // sonic-boom v4 has no public buffered-bytes accessor; pinned to ^4.2.1.
+        return (this.sonic as unknown as {_len: number})._len;
     }
 
     flush(): void {
-        try { (this.sonic as unknown as {flushSync?: () => void}).flushSync?.(); } catch { /* ignore */ }
+        try { this.sonic.flushSync(); } catch { /* ignore */ }
+    }
+
+    async shutdown(): Promise<void> {
+        try { this.sonic.flushSync(); } catch { /* ignore */ }
     }
 }

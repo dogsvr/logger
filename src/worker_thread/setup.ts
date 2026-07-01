@@ -1,7 +1,6 @@
 import pino, {type Logger as PinoLogger, type LoggerOptions} from "pino";
-import {registerWorkerLogger, getSpanSink} from "@dogsvr/dogsvr/worker_thread";
+import {registerWorkerLogger, getSpanSink, onShutdown} from "@dogsvr/dogsvr/worker_thread";
 import {defaultBase, wrapPino, traceContextMixin} from "../common/pino_adapter";
-import {installShutdownHooks} from "../common/shutdown";
 import type {WorkerSetupOptions} from "../common/options";
 import type {WorkerStrategy} from "../common/strategies/strategy";
 import {InlineWorkerStrategy} from "../common/strategies/inline_worker";
@@ -18,7 +17,7 @@ function buildPinoOptions(opts: WorkerSetupOptions): LoggerOptions {
     };
 }
 
-/** Initialise the pino backend inside a worker_thread and register it with dogsvr. */
+/** Initialise pino + register with dogsvr. Must be called once per worker_thread. */
 export function setupLoggerInWorker(opts: WorkerSetupOptions): void {
     if (setupCalled) {
         throw new Error("setupLoggerInWorker already called");
@@ -46,5 +45,5 @@ export function setupLoggerInWorker(opts: WorkerSetupOptions): void {
 
     const p: PinoLogger = pino(buildPinoOptions(opts), strategy.workerDestination());
     registerWorkerLogger(wrapPino(p));
-    installShutdownHooks(strategy);
+    onShutdown(() => strategy.shutdown());
 }

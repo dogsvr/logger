@@ -1,13 +1,26 @@
 import * as path from "path";
 import {Worker, MessageChannel, type MessagePort} from "worker_threads";
-import type {DestinationStream} from "pino";
-import type {SetupOptions, WorkerInitPayload} from "../options";
+import pino, {type DestinationStream} from "pino";
+import type {SetupOptions, WorkerInitPayload, OtelLogsOptions, Level} from "../options";
 import type {MainStrategy} from "./strategy";
+import type {AttachMsg, FlushMsg, InitMsg, OtelInitFields, ShutdownMsg} from "./central_protocol";
 
 const ISOLATE_ENTRY = path.join(__dirname, "central_isolate_entry.js");
 
 const DEFAULT_HIGH_WATER = 4_000_000;
 const DEFAULT_LOW_WATER = 1_000_000;
+const SHUTDOWN_TIMEOUT_MS = 5_000;
+
+function buildOtelInitFields(otel: OtelLogsOptions, fallbackLevel: Level): OtelInitFields {
+    const levelName = otel.level ?? fallbackLevel;
+    const levelNumeric = pino.levels.values[levelName] ?? 0;
+    return {
+        otlpEndpoint: otel.otlpEndpoint!,
+        serviceName: otel.serviceName!,
+        levelNumeric,
+        resourceAttributes: otel.resourceAttributes,
+    };
+}
 
 /**
  * Single dedicated Worker isolate owns the destination fd; all business threads
@@ -17,6 +30,8 @@ export class CentralMainStrategy implements MainStrategy {
     private centralWorker: Worker;
     private mainSink: DestinationStream;
     private readonly destination: string | number;
+    private exitPromise: Promise<void>;
+    private shuttingDown = false;
 
     constructor(opts: SetupOptions) {
         this.destination = opts.destination ?? 1;
@@ -27,20 +42,26 @@ export class CentralMainStrategy implements MainStrategy {
         this.centralWorker.on("error", (err) => {
             try { process.stderr.write(`{"level":60,"msg":"central isolate error: ${String(err)}"}\n`); } catch { /* ignore */ }
         });
-        // SPOF degradation: central isolate dies → fall back to stderr.
-        this.centralWorker.on("exit", () => {
-            this.mainSink = stderrFallback();
+        this.exitPromise = new Promise<void>((resolve) => {
+            this.centralWorker.once("exit", () => {
+                // SPOF degradation: route late-arriving lines to stderr after isolate dies.
+                this.mainSink = stderrFallback();
+                resolve();
+            });
         });
         this.centralWorker.postMessage({
             type: "init",
             destination: this.destination,
             highWaterMark: high,
             lowWaterMark: low,
-            otel: opts.otel,
-        });
+            otel: opts.otel?.enabled ? buildOtelInitFields(opts.otel, opts.level) : undefined,
+        } satisfies InitMsg);
 
         const ch = new MessageChannel();
-        this.centralWorker.postMessage({type: "attach", port: ch.port1}, [ch.port1]);
+        this.centralWorker.postMessage(
+            {type: "attach", port: ch.port1} satisfies AttachMsg,
+            [ch.port1],
+        );
         this.mainSink = portSink(ch.port2);
     }
 
@@ -50,7 +71,10 @@ export class CentralMainStrategy implements MainStrategy {
 
     issueWorkerPort(): MessagePort | undefined {
         const ch = new MessageChannel();
-        this.centralWorker.postMessage({type: "attach", port: ch.port1}, [ch.port1]);
+        this.centralWorker.postMessage(
+            {type: "attach", port: ch.port1} satisfies AttachMsg,
+            [ch.port1],
+        );
         return ch.port2;
     }
 
@@ -67,7 +91,23 @@ export class CentralMainStrategy implements MainStrategy {
     }
 
     flush(): void {
-        try { this.centralWorker.postMessage({type: "flush"}); } catch { /* ignore */ }
+        try { this.centralWorker.postMessage({type: "flush"} satisfies FlushMsg); } catch { /* ignore */ }
+    }
+
+    /** Wait for the isolate to drain (sonic.flushSync + otel shutdown) before resolving. Bounded. */
+    async shutdown(): Promise<void> {
+        if (this.shuttingDown) return this.exitPromise;
+        this.shuttingDown = true;
+        try {
+            this.centralWorker.postMessage({type: "shutdown"} satisfies ShutdownMsg);
+        } catch { /* ignore */ }
+        await Promise.race([
+            this.exitPromise,
+            new Promise<void>((resolve) => {
+                const t = setTimeout(resolve, SHUTDOWN_TIMEOUT_MS);
+                t.unref();
+            }),
+        ]);
     }
 }
 

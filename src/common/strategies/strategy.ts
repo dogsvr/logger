@@ -9,10 +9,14 @@ export interface MainStrategy {
     workerInitFor(port: MessagePort | undefined): WorkerInitPayload;
     /** Health probe. Inline always returns 0. */
     bufferedBytes(): number;
+    /** Fire-and-forget flush; used by `LoggerHub.flush()`. */
     flush(): void;
+    /** Drain everything (incl. otel) and tear down side processes; awaited by signal handlers. */
+    shutdown(): Promise<void>;
 }
 
 export interface WorkerStrategy {
     workerDestination(): DestinationStream;
     flush(): void;
+    shutdown(): Promise<void>;
 }

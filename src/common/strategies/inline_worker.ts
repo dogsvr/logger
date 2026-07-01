@@ -3,10 +3,7 @@ import type {DestinationStream} from "pino";
 import type {WorkerSetupOptions} from "../options";
 import type {WorkerStrategy} from "./strategy";
 
-/**
- * Each worker owns its own sonic-boom to the same fd (typically a file path,
- * for O_APPEND atomicity across N+1 writers).
- */
+/** Each worker owns its own sonic-boom; pair with a file destination for O_APPEND atomicity. */
 export class InlineWorkerStrategy implements WorkerStrategy {
     private sonic: InstanceType<typeof SonicBoom>;
 
@@ -27,6 +24,10 @@ export class InlineWorkerStrategy implements WorkerStrategy {
     }
 
     flush(): void {
-        try { (this.sonic as unknown as {flushSync?: () => void}).flushSync?.(); } catch { /* ignore */ }
+        try { this.sonic.flushSync(); } catch { /* ignore */ }
+    }
+
+    async shutdown(): Promise<void> {
+        try { this.sonic.flushSync(); } catch { /* ignore */ }
     }
 }

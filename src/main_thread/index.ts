@@ -1,2 +1,2 @@
-export {setupLogger, setupLoggerWithOtel} from "./setup";
-export type {SetupOptions, Mode, OtelLogsOptions} from "../common/options";
+export {setupLogger} from "./setup";
+export type {SetupOptions, Mode, OtelLogsOptions, Level} from "../common/options";

@@ -13,10 +13,7 @@ export function wrapPino(p: PinoLogger): LoggerImpl {
     return p as unknown as LoggerImpl;
 }
 
-/**
- * Build a pino mixin that injects traceId/spanId from the active span.
- * getSink is parameterised because main and worker use different dogsvr subpaths.
- */
+/** getSink is parameterised because main and worker use different dogsvr subpaths. */
 export function traceContextMixin(getSink: () => SpanSink): () => Record<string, string> {
     const empty: Record<string, string> = {};
     return () => {

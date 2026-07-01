@@ -3,7 +3,6 @@ import type {DestinationStream} from "pino";
 import type {WorkerSetupOptions} from "../options";
 import type {WorkerStrategy} from "./strategy";
 
-/** Forwards pino NDJSON lines to the main-thread-issued MessagePort (central isolate). */
 export class CentralWorkerStrategy implements WorkerStrategy {
     private port: MessagePort;
 
@@ -23,7 +22,7 @@ export class CentralWorkerStrategy implements WorkerStrategy {
         } as unknown as DestinationStream;
     }
 
-    flush(): void {
-        // flushing is owned by the central isolate
-    }
+    // Flush + shutdown live on the central isolate; worker side is a no-op.
+    flush(): void { /* noop */ }
+    async shutdown(): Promise<void> { /* noop */ }
 }

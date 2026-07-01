@@ -1,18 +1,28 @@
 import type {MessagePort} from "worker_threads";
-import type {Level} from "@dogsvr/dogsvr/main_thread";
+import type {LevelWithSilent as Level} from "pino";
+
+export type {Level};
 
 export type Mode = "central" | "inline";
 
-/** Shipping logs to an OTLP backend (Jaeger / Tempo / SaaS). Central mode only. */
+/**
+ * OTLP log shipping. Central mode only.
+ *
+ * Required-when-enabled fields are validated at runtime in `setupLogger` rather than
+ * with a discriminated union, so a single env-driven bool can flip without forking config.
+ */
 export interface OtelLogsOptions {
-    /** OTLP HTTP endpoint, e.g. http://localhost:4318/v1/logs. */
-    otlpEndpoint: string;
-    serviceName: string;
-    /** Extra resource attributes; merged with serviceName + defaults. */
+    enabled: boolean;
+    /** Required when enabled=true. e.g. http://localhost:4318/v1/logs */
+    otlpEndpoint?: string;
+    /** Required when enabled=true. */
+    serviceName?: string;
+    /** OTLP-sink minimum level. Independent of `SetupOptions.level`. Defaults to it. */
+    level?: Level;
+    /** Merged with serviceName + defaults. */
     resourceAttributes?: Record<string, string>;
 }
 
-/** `level` is the only field dogsvr core inspects. */
 export interface SetupOptions {
     mode: Mode;
     level: Level;
@@ -20,7 +30,7 @@ export interface SetupOptions {
     base?: Record<string, unknown>;
     centralBufferHighWaterMark?: number;
     centralBufferLowWaterMark?: number;
-    /** When set, central isolate also ships logs to OTLP. Throws on inline mode. */
+    /** Throws on inline mode. */
     otel?: OtelLogsOptions;
 }
 
