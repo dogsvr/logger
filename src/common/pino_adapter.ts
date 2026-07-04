@@ -15,13 +15,12 @@ export function wrapPino(p: PinoLogger): LoggerImpl {
 
 /** getSink is parameterised because main and worker use different dogsvr subpaths. */
 export function traceContextMixin(getSink: () => SpanSink): () => Record<string, string> {
-    const empty: Record<string, string> = {};
-    return () => {
-        const span = getSink().getCurrent();
-        if (!span) return empty;
-        const ctx = span.context();
-        if (!ctx.traceId) return empty;
-        return {traceId: ctx.traceId, spanId: ctx.spanId};
+    return (): Record<string, string> => {
+        const ctx = getSink().getCurrentContext();
+        if (!ctx) return {};
+        const {traceId, spanId} = ctx;
+        if (!traceId) return {};
+        return {traceId, spanId};
     };
 }
 
