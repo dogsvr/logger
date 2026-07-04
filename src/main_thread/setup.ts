@@ -2,9 +2,9 @@ import pino, {type Logger as PinoLogger, type LoggerOptions} from "pino";
 import {registerLogger, getSpanSink, onShutdown} from "@dogsvr/dogsvr/main_thread";
 import {defaultBase, wrapPino, traceContextMixin} from "../common/pino_adapter";
 import type {SetupOptions} from "../common/options";
-import type {MainStrategy} from "../common/strategies/strategy";
-import {InlineMainStrategy} from "../common/strategies/inline_main";
-import {CentralMainStrategy} from "../common/strategies/central_main";
+import type {MainStrategy} from "../strategies/strategy";
+import {InlineMainStrategy} from "../strategies/inline/main";
+import {CentralMainStrategy} from "../strategies/central/main";
 import {makeHub} from "./pino_hub";
 
 let setupCalled = false;

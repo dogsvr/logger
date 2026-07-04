@@ -1,6 +1,6 @@
 import type {DestinationStream} from "pino";
 import type {Worker, MessagePort} from "worker_threads";
-import type {WorkerInitPayload} from "../options";
+import type {WorkerInitPayload} from "../common/options";
 
 export interface MainStrategy {
     mainDestination(): DestinationStream;

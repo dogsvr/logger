@@ -1,5 +1,5 @@
 import type {LoggerHub} from "@dogsvr/dogsvr/main_thread";
-import type {MainStrategy} from "../common/strategies/strategy";
+import type {MainStrategy} from "../strategies/strategy";
 
 export function makeHub(strategy: MainStrategy): LoggerHub {
     return {

@@ -1,7 +1,7 @@
 import type {MessagePort} from "worker_threads";
 import type {DestinationStream} from "pino";
-import type {WorkerSetupOptions} from "../options";
-import type {WorkerStrategy} from "./strategy";
+import type {WorkerSetupOptions} from "../../common/options";
+import type {WorkerStrategy} from "../strategy";
 
 export class CentralWorkerStrategy implements WorkerStrategy {
     private port: MessagePort;

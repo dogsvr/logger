@@ -1,8 +1,8 @@
 import SonicBoom from "sonic-boom";
 import type {DestinationStream} from "pino";
 import type {Worker, MessagePort} from "worker_threads";
-import type {SetupOptions, WorkerInitPayload} from "../options";
-import type {MainStrategy} from "./strategy";
+import type {SetupOptions, WorkerInitPayload} from "../../common/options";
+import type {MainStrategy} from "../strategy";
 
 export class InlineMainStrategy implements MainStrategy {
     private sonic: InstanceType<typeof SonicBoom>;

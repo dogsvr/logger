@@ -1,11 +1,11 @@
 import * as path from "path";
 import {Worker, MessageChannel, type MessagePort} from "worker_threads";
 import pino, {type DestinationStream} from "pino";
-import type {SetupOptions, WorkerInitPayload, OtelLogsOptions, Level} from "../options";
-import type {MainStrategy} from "./strategy";
-import type {AttachMsg, FlushMsg, InitMsg, OtelInitFields, ShutdownMsg} from "./central_protocol";
+import type {SetupOptions, WorkerInitPayload, OtelLogsOptions, Level} from "../../common/options";
+import type {MainStrategy} from "../strategy";
+import type {AttachMsg, FlushMsg, InitMsg, OtelInitFields, ShutdownMsg} from "./protocol";
 
-const ISOLATE_ENTRY = path.join(__dirname, "central_isolate_entry.js");
+const ISOLATE_ENTRY = path.join(__dirname, "isolate_entry.js");
 
 const DEFAULT_HIGH_WATER = 4_000_000;
 const DEFAULT_LOW_WATER = 1_000_000;

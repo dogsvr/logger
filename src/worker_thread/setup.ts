@@ -2,9 +2,9 @@ import pino, {type Logger as PinoLogger, type LoggerOptions} from "pino";
 import {registerWorkerLogger, getSpanSink, onShutdown} from "@dogsvr/dogsvr/worker_thread";
 import {defaultBase, wrapPino, traceContextMixin} from "../common/pino_adapter";
 import type {WorkerSetupOptions} from "../common/options";
-import type {WorkerStrategy} from "../common/strategies/strategy";
-import {InlineWorkerStrategy} from "../common/strategies/inline_worker";
-import {CentralWorkerStrategy} from "../common/strategies/central_worker";
+import type {WorkerStrategy} from "../strategies/strategy";
+import {InlineWorkerStrategy} from "../strategies/inline/worker";
+import {CentralWorkerStrategy} from "../strategies/central/worker";
 
 let setupCalled = false;
 

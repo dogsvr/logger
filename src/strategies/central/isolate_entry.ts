@@ -5,7 +5,7 @@ import {SeverityNumber, type AnyValue, type AnyValueMap} from "@opentelemetry/ap
 import {LoggerProvider, BatchLogRecordProcessor} from "@opentelemetry/sdk-logs";
 import {OTLPLogExporter} from "@opentelemetry/exporter-logs-otlp-http";
 import {resourceFromAttributes} from "@opentelemetry/resources";
-import type {ControlMsg, InitMsg, OtelInitFields} from "./central_protocol";
+import type {ControlMsg, InitMsg, OtelInitFields} from "./protocol";
 
 let sonic: InstanceType<typeof SonicBoom> | null = null;
 let highWaterMark = 4_000_000;
@@ -206,7 +206,7 @@ async function shutdown(): Promise<void> {
 }
 
 if (!parentPort) {
-    throw new Error("central_isolate_entry must run inside a Worker");
+    throw new Error("isolate_entry must run inside a Worker");
 }
 
 parentPort.on("message", (msg: ControlMsg) => {

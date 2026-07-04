@@ -1,7 +1,7 @@
 import SonicBoom from "sonic-boom";
 import type {DestinationStream} from "pino";
-import type {WorkerSetupOptions} from "../options";
-import type {WorkerStrategy} from "./strategy";
+import type {WorkerSetupOptions} from "../../common/options";
+import type {WorkerStrategy} from "../strategy";
 
 /** Each worker owns its own sonic-boom; pair with a file destination for O_APPEND atomicity. */
 export class InlineWorkerStrategy implements WorkerStrategy {
