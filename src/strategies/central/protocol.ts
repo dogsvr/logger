@@ -20,3 +20,5 @@ export interface FlushMsg { type: "flush" }
 export interface ShutdownMsg { type: "shutdown" }
 
 export type ControlMsg = InitMsg | AttachMsg | FlushMsg | ShutdownMsg;
+
+export interface TidReportMsg { type: "tidReport"; osTid: number; nodeThreadId: number }

@@ -1,11 +1,12 @@
+import * as fs from "node:fs";
 import SonicBoom from "sonic-boom";
-import {parentPort, MessagePort} from "worker_threads";
+import {parentPort, threadId, MessagePort} from "worker_threads";
 import {trace, ROOT_CONTEXT, type Context} from "@opentelemetry/api";
 import {SeverityNumber, type AnyValue, type AnyValueMap} from "@opentelemetry/api-logs";
 import {LoggerProvider, BatchLogRecordProcessor} from "@opentelemetry/sdk-logs";
 import {OTLPLogExporter} from "@opentelemetry/exporter-logs-otlp-http";
 import {resourceFromAttributes} from "@opentelemetry/resources";
-import type {ControlMsg, InitMsg, OtelInitFields} from "./protocol";
+import type {ControlMsg, InitMsg, OtelInitFields, TidReportMsg} from "./protocol";
 
 let sonic: InstanceType<typeof SonicBoom> | null = null;
 let highWaterMark = 4_000_000;
@@ -186,6 +187,28 @@ function init(msg: InitMsg): void {
     });
     if (msg.otel) initOtel(msg.otel);
     startMetaReporter();
+    reportSelfTid();
+}
+
+function getSelfOsTid(): number | null {
+    if (process.platform !== "linux") return null;
+    try {
+        const target = fs.readlinkSync("/proc/thread-self");
+        const slash = target.lastIndexOf("/");
+        const tid = Number(slash >= 0 ? target.slice(slash + 1) : target);
+        return Number.isFinite(tid) ? tid : null;
+    } catch {
+        return null;
+    }
+}
+
+function reportSelfTid(): void {
+    if (!parentPort) return;
+    const osTid = getSelfOsTid();
+    if (osTid === null) return;
+    try {
+        parentPort.postMessage({type: "tidReport", osTid, nodeThreadId: threadId} satisfies TidReportMsg);
+    } catch { /* ignore */ }
 }
 
 async function flushAll(): Promise<void> {

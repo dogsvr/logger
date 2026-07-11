@@ -1,9 +1,10 @@
 import * as path from "path";
 import {Worker, MessageChannel, type MessagePort} from "worker_threads";
 import pino, {type DestinationStream} from "pino";
+import {registerInternalThread} from "@dogsvr/dogsvr/main_thread";
 import type {SetupOptions, WorkerInitPayload, OtelLogsOptions, Level} from "../../common/options";
 import type {MainStrategy} from "../strategy";
-import type {AttachMsg, FlushMsg, InitMsg, OtelInitFields, ShutdownMsg} from "./protocol";
+import type {AttachMsg, FlushMsg, InitMsg, OtelInitFields, ShutdownMsg, TidReportMsg} from "./protocol";
 
 const ISOLATE_ENTRY = path.join(__dirname, "isolate_entry.js");
 
@@ -41,6 +42,11 @@ export class CentralMainStrategy implements MainStrategy {
         this.centralWorker = new Worker(ISOLATE_ENTRY);
         this.centralWorker.on("error", (err) => {
             try { process.stderr.write(`{"level":60,"msg":"central isolate error: ${String(err)}"}\n`); } catch { /* ignore */ }
+        });
+        this.centralWorker.on("message", (msg: TidReportMsg) => {
+            if (msg?.type === "tidReport") {
+                registerInternalThread("logger_central", msg.osTid, msg.nodeThreadId);
+            }
         });
         this.exitPromise = new Promise<void>((resolve) => {
             this.centralWorker.once("exit", () => {
