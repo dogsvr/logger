@@ -1,28 +1,41 @@
-import type {MessagePort} from "worker_threads";
 import type {DestinationStream} from "pino";
 import type {WorkerSetupOptions} from "../../common/options";
 import type {WorkerStrategy} from "../strategy";
+import {SabLogWriter} from "./sab_writer_worker";
 
 export class CentralWorkerStrategy implements WorkerStrategy {
-    private port: MessagePort;
+    private sink: DestinationStream;
+    private sabWriter: SabLogWriter | null = null;
 
     constructor(opts: WorkerSetupOptions) {
         if (!opts.port) {
             throw new Error("central mode requires opts.port (transfer from main thread)");
         }
-        this.port = opts.port;
+        if (opts.sab && opts.producerId !== undefined) {
+            this.sabWriter = new SabLogWriter({
+                sab: opts.sab,
+                producerId: opts.producerId,
+                fallbackPort: opts.port,
+                fallbackOnFull: opts.sabFallbackOnFull ?? "warn+",
+            });
+            this.sink = this.sabWriter;
+        } else {
+            const port = opts.port;
+            this.sink = {
+                write(line: string) {
+                    try { port.postMessage(line); } catch { /* ignore */ }
+                },
+            } as unknown as DestinationStream;
+        }
     }
 
     workerDestination(): DestinationStream {
-        const port = this.port;
-        return {
-            write(line: string) {
-                try { port.postMessage(line); } catch { /* ignore */ }
-            },
-        } as unknown as DestinationStream;
+        return this.sink;
     }
 
-    // Flush + shutdown live on the central isolate; worker side is a no-op.
-    flush(): void { /* noop */ }
-    async shutdown(): Promise<void> { /* noop */ }
+    flush(): void { /* noop; central isolate owns flush */ }
+
+    async shutdown(): Promise<void> {
+        if (this.sabWriter) this.sabWriter.stop();
+    }
 }

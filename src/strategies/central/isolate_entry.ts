@@ -6,14 +6,27 @@ import {SeverityNumber, type AnyValue, type AnyValueMap} from "@opentelemetry/ap
 import {LoggerProvider, BatchLogRecordProcessor} from "@opentelemetry/sdk-logs";
 import {OTLPLogExporter} from "@opentelemetry/exporter-logs-otlp-http";
 import {resourceFromAttributes} from "@opentelemetry/resources";
-import type {ControlMsg, InitMsg, OtelInitFields, TidReportMsg} from "./protocol";
+import type {
+    AttachSabMsg,
+    ControlMsg,
+    DetachSabMsg,
+    FlushMsg,
+    FlushedMsg,
+    InitMsg,
+    OtelInitFields,
+    SabDropReportMsg,
+    TidReportMsg,
+} from "./protocol";
+import {SabLogReader} from "./sab_reader_isolate";
 
 let sonic: InstanceType<typeof SonicBoom> | null = null;
 let highWaterMark = 4_000_000;
 let lowWaterMark = 1_000_000;
 let dropMode = false;
 const droppedByLevel = new Map<number, number>();
+const droppedBySab = new Map<number, number>();
 const attachedPorts = new Set<MessagePort>();
+const attachedReaders = new Map<string, SabLogReader>();
 
 let otelLogger: ReturnType<LoggerProvider["getLogger"]> | null = null;
 let otelProvider: LoggerProvider | null = null;
@@ -24,10 +37,12 @@ let metaTimer: NodeJS.Timeout | null = null;
 function startMetaReporter(): void {
     if (metaTimer) return;
     metaTimer = setInterval(() => {
-        if (droppedByLevel.size === 0) return;
+        if (droppedByLevel.size === 0 && droppedBySab.size === 0) return;
         const summary: Record<string, number> = {};
         for (const [level, count] of droppedByLevel) summary[String(level)] = count;
+        for (const [level, count] of droppedBySab) summary[String(level)] = (summary[String(level)] ?? 0) + count;
         droppedByLevel.clear();
+        droppedBySab.clear();
         try {
             process.stderr.write(
                 `{"level":40,"time":"${new Date().toISOString()}","msg":"logger drop","byLevel":${JSON.stringify(summary)}}\n`,
@@ -39,8 +54,6 @@ function startMetaReporter(): void {
 
 function checkBackPressure(): void {
     if (!sonic) return;
-    // sonic-boom v4 has no public buffered-bytes accessor; `_len` is the internal
-    // counter. Pinned to ^4.2.1; re-verify on minor bumps.
     const buffered = (sonic as unknown as {_len: number})._len;
     if (!dropMode && buffered >= highWaterMark) {
         dropMode = true;
@@ -51,7 +64,6 @@ function checkBackPressure(): void {
 
 function extractLevel(line: string): number {
     const idx = line.indexOf("\"level\":");
-    // pino emits `level` as the first cache slot; >64 is a defensive bound.
     if (idx < 0 || idx > 64) return 30;
     const start = idx + 8;
     let end = start;
@@ -69,7 +81,6 @@ function pinoLevelToSeverity(level: number): SeverityNumber {
     return SeverityNumber.TRACE;
 }
 
-// Mapped to dedicated LogRecord fields, not attributes.
 const ATTR_RESERVED = new Set(["level", "time", "msg", "traceId", "spanId"]);
 
 function toAnyValue(v: unknown): AnyValue {
@@ -109,7 +120,6 @@ function emitOtel(obj: Record<string, unknown>, line: string, level: number): vo
         attributes[k] = v;
     }
 
-    // Preserve the originating thread's wall-clock; pino `time` is epoch ms.
     const timestamp = typeof obj.time === "number" ? obj.time : undefined;
 
     try {
@@ -127,7 +137,6 @@ function onLine(line: string): void {
     const level = extractLevel(line);
 
     if (sonic) {
-        // Preserve warn+ on backpressure; drop trace/debug/info.
         if (dropMode && level < 40) {
             droppedByLevel.set(level, (droppedByLevel.get(level) ?? 0) + 1);
         } else {
@@ -136,7 +145,6 @@ function onLine(line: string): void {
         }
     }
 
-    // otel sink is independent of sonic backpressure.
     if (otelLogger && level >= otelLevelNumeric) {
         let obj: Record<string, unknown>;
         try { obj = JSON.parse(line); } catch { return; }
@@ -146,12 +154,43 @@ function onLine(line: string): void {
 
 function attachPort(port: MessagePort): void {
     attachedPorts.add(port);
-    port.on("message", (line: unknown) => {
-        if (typeof line === "string") onLine(line);
+    port.on("message", (msg: unknown) => {
+        if (typeof msg === "string") {
+            onLine(msg);
+            return;
+        }
+        if (msg && typeof msg === "object" && (msg as {type?: string}).type === "sabDropReport") {
+            const rpt = msg as SabDropReportMsg;
+            for (const [level, count] of Object.entries(rpt.byLevel)) {
+                const n = Number(level);
+                if (!Number.isFinite(n)) continue;
+                droppedBySab.set(n, (droppedBySab.get(n) ?? 0) + count);
+            }
+        }
     });
     port.on("close", () => {
         attachedPorts.delete(port);
     });
+}
+
+function attachSab(msg: AttachSabMsg): void {
+    const existing = attachedReaders.get(msg.producerId);
+    if (existing) existing.stop();
+    const reader = new SabLogReader(msg.sab, msg.producerId, onLine);
+    attachedReaders.set(msg.producerId, reader);
+    reader.start();
+}
+
+function detachSab(msg: DetachSabMsg): void {
+    const reader = attachedReaders.get(msg.producerId);
+    if (!reader) return;
+    reader.drainSync();
+    reader.stop();
+    attachedReaders.delete(msg.producerId);
+}
+
+function drainAllSab(): void {
+    for (const reader of attachedReaders.values()) reader.drainSync();
 }
 
 function initOtel(otel: OtelInitFields): void {
@@ -211,17 +250,22 @@ function reportSelfTid(): void {
     } catch { /* ignore */ }
 }
 
-async function flushAll(): Promise<void> {
+async function flushAll(flushId?: number): Promise<void> {
+    drainAllSab();
     try { sonic?.flushSync(); } catch { /* ignore */ }
     try { await otelProvider?.forceFlush(); } catch { /* ignore */ }
+    if (typeof flushId === "number" && parentPort) {
+        try { parentPort.postMessage({type: "flushed", flushId} satisfies FlushedMsg); } catch { /* ignore */ }
+    }
 }
 
 async function shutdown(): Promise<void> {
     if (metaTimer) { clearInterval(metaTimer); metaTimer = null; }
-    // Close ports before flush so no `onLine` races with flushSync.
+    for (const reader of attachedReaders.values()) reader.stop();
     for (const port of attachedPorts) {
         try { port.close(); } catch { /* ignore */ }
     }
+    attachedReaders.clear();
     attachedPorts.clear();
     await flushAll();
     try { await otelProvider?.shutdown(); } catch { /* ignore */ }
@@ -236,7 +280,18 @@ parentPort.on("message", (msg: ControlMsg) => {
     switch (msg.type) {
         case "init": init(msg); break;
         case "attach": attachPort(msg.port); break;
-        case "flush": void flushAll(); break;
+        case "attachSab": attachSab(msg); break;
+        case "detachSab": detachSab(msg); break;
+        case "sabDropReport": {
+            const rpt = msg;
+            for (const [level, count] of Object.entries(rpt.byLevel)) {
+                const n = Number(level);
+                if (!Number.isFinite(n)) continue;
+                droppedBySab.set(n, (droppedBySab.get(n) ?? 0) + count);
+            }
+            break;
+        }
+        case "flush": void flushAll((msg as FlushMsg).flushId); break;
         case "shutdown": void shutdown(); break;
     }
 });

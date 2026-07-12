@@ -23,6 +23,19 @@ export interface OtelLogsOptions {
     resourceAttributes?: Record<string, string>;
 }
 
+export type CentralTransport = "sab" | "postMessage";
+export type LogFallbackOnFull = "warn+" | "drop";
+
+/** Central-mode transport for the data path. Ignored in inline mode. */
+export interface CentralChannelOptions {
+    /** Default "sab". */
+    transport?: CentralTransport;
+    /** Ring-buffer data-area size per producer. Default 4 MiB. */
+    sabSizeBytes?: number;
+    /** SAB-full policy for log data path. Default "warn+". */
+    fallbackOnFull?: LogFallbackOnFull;
+}
+
 export interface SetupOptions {
     mode: Mode;
     level: Level;
@@ -30,6 +43,8 @@ export interface SetupOptions {
     base?: Record<string, unknown>;
     centralBufferHighWaterMark?: number;
     centralBufferLowWaterMark?: number;
+    /** Central-mode data-path transport. */
+    channel?: CentralChannelOptions;
     /** Throws on inline mode. */
     otel?: OtelLogsOptions;
 }
@@ -39,6 +54,9 @@ export interface WorkerSetupOptions {
     level: Level;
     destination?: string | number;
     port?: MessagePort;
+    sab?: SharedArrayBuffer;
+    producerId?: string;
+    sabFallbackOnFull?: LogFallbackOnFull;
     base?: Record<string, unknown>;
 }
 
@@ -47,5 +65,8 @@ export interface WorkerInitPayload {
     mode: Mode;
     destination?: string | number;
     port?: MessagePort;
+    sab?: SharedArrayBuffer;
+    producerId?: string;
+    sabFallbackOnFull?: LogFallbackOnFull;
     [key: string]: unknown;
 }
