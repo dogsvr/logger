@@ -21,8 +21,8 @@ import type {
     ShutdownMsg,
     TidReportMsg,
 } from "./protocol";
-import {SabLogWriter} from "./sab_writer_worker";
-import {DEFAULT_LOG_SAB_DATA_BYTES, makeSab} from "./sab_shared";
+import {SabLogWriter, DEFAULT_LOG_SAB_DATA_BYTES} from "./sab_writer";
+import {makeLineSab} from "@dogsvr/dogsvr/common";
 
 const ISOLATE_ENTRY = path.join(__dirname, "isolate_entry.js");
 
@@ -109,7 +109,7 @@ export class CentralMainStrategy implements MainStrategy {
         this.mainPort = mainCh.port2;
 
         if (this.transport === "sab") {
-            const sab = makeSab(this.sabSizeBytes);
+            const sab = makeLineSab(this.sabSizeBytes);
             this.centralWorker.postMessage(
                 {type: "attachSab", sab, producerId: MAIN_PRODUCER_ID} satisfies AttachSabMsg,
             );
@@ -146,7 +146,7 @@ export class CentralMainStrategy implements MainStrategy {
         const payload: WorkerInitPayload = {mode: "central", port};
         if (this.transport === "sab") {
             const producerId = String(this.nextWorkerSlot++);
-            const sab = makeSab(this.sabSizeBytes);
+            const sab = makeLineSab(this.sabSizeBytes);
             this.centralWorker.postMessage(
                 {type: "attachSab", sab, producerId} satisfies AttachSabMsg,
             );

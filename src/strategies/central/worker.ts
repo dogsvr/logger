@@ -1,7 +1,7 @@
 import type {DestinationStream} from "pino";
 import type {WorkerSetupOptions} from "../../common/options";
 import type {WorkerStrategy} from "../strategy";
-import {SabLogWriter} from "./sab_writer_worker";
+import {SabLogWriter} from "./sab_writer";
 
 export class CentralWorkerStrategy implements WorkerStrategy {
     private sink: DestinationStream;

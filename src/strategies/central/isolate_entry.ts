@@ -17,7 +17,8 @@ import type {
     SabDropReportMsg,
     TidReportMsg,
 } from "./protocol";
-import {SabLogReader} from "./sab_reader_isolate";
+import {SabLogReader} from "./sab_reader";
+import {extractLevel} from "./pino_level";
 
 let sonic: InstanceType<typeof SonicBoom> | null = null;
 let highWaterMark = 4_000_000;
@@ -60,16 +61,6 @@ function checkBackPressure(): void {
     } else if (dropMode && buffered <= lowWaterMark) {
         dropMode = false;
     }
-}
-
-function extractLevel(line: string): number {
-    const idx = line.indexOf("\"level\":");
-    if (idx < 0 || idx > 64) return 30;
-    const start = idx + 8;
-    let end = start;
-    while (end < line.length && line.charCodeAt(end) >= 0x30 && line.charCodeAt(end) <= 0x39) end++;
-    if (end === start) return 30;
-    return Number(line.slice(start, end));
 }
 
 function pinoLevelToSeverity(level: number): SeverityNumber {
@@ -176,7 +167,7 @@ function attachPort(port: MessagePort): void {
 function attachSab(msg: AttachSabMsg): void {
     const existing = attachedReaders.get(msg.producerId);
     if (existing) existing.stop();
-    const reader = new SabLogReader(msg.sab, msg.producerId, onLine);
+    const reader = new SabLogReader(msg.sab, onLine);
     attachedReaders.set(msg.producerId, reader);
     reader.start();
 }
