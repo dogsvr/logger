@@ -17,17 +17,20 @@ import type {
     SabDropReportMsg,
     TidReportMsg,
 } from "./protocol";
-import {SabLogReader} from "./sab_reader";
+import {SabLineReader} from "@dogsvr/dogsvr/common";
 import {extractLevel} from "./pino_level";
 
 let sonic: InstanceType<typeof SonicBoom> | null = null;
+/** sonic-boom 4.x accepts Buffers in contentMode:"buffer" but its .d.ts only declares write(string). */
+type BufferSink = {write(data: Buffer): boolean};
+let sonicBuf: BufferSink | null = null;
 let highWaterMark = 4_000_000;
 let lowWaterMark = 1_000_000;
 let dropMode = false;
 const droppedByLevel = new Map<number, number>();
 const droppedBySab = new Map<number, number>();
 const attachedPorts = new Set<MessagePort>();
-const attachedReaders = new Map<string, SabLogReader>();
+const attachedReaders = new Map<string, SabLineReader>();
 
 let otelLogger: ReturnType<LoggerProvider["getLogger"]> | null = null;
 let otelProvider: LoggerProvider | null = null;
@@ -124,14 +127,41 @@ function emitOtel(obj: Record<string, unknown>, line: string, level: number): vo
     } catch { /* ignore */ }
 }
 
-function onLine(line: string): void {
-    const level = extractLevel(line);
-
-    if (sonic) {
+/**
+ * The copy is required, not defensive: sonic-boom retains whatever Buffer it is handed
+ * (`bufs.push([data])`), so passing the live ring slice lets the producer overwrite the
+ * bytes before they reach disk.
+ */
+function onRecord(buf: Buffer, off: number, len: number, level: number): void {
+    if (sonicBuf) {
         if (dropMode && level < 40) {
             droppedByLevel.set(level, (droppedByLevel.get(level) ?? 0) + 1);
         } else {
-            sonic.write(line);
+            const copy = Buffer.allocUnsafe(len);
+            buf.copy(copy, 0, off, off + len);
+            sonicBuf.write(copy);
+            checkBackPressure();
+        }
+    }
+
+    // Decode lazily — only the OTel path needs a string, and it is usually off.
+    if (otelLogger && level >= otelLevelNumeric) {
+        const line = buf.toString("utf8", off, off + len);
+        let obj: Record<string, unknown>;
+        try { obj = JSON.parse(line); } catch { return; }
+        emitOtel(obj, line, level);
+    }
+}
+
+/** postMessage fallback path (SAB-full overflow, stderr sink) — still string-based. */
+function onLine(line: string): void {
+    const level = extractLevel(line);
+
+    if (sonicBuf) {
+        if (dropMode && level < 40) {
+            droppedByLevel.set(level, (droppedByLevel.get(level) ?? 0) + 1);
+        } else {
+            sonicBuf.write(Buffer.from(line, "utf8"));
             checkBackPressure();
         }
     }
@@ -167,7 +197,7 @@ function attachPort(port: MessagePort): void {
 function attachSab(msg: AttachSabMsg): void {
     const existing = attachedReaders.get(msg.producerId);
     if (existing) existing.stop();
-    const reader = new SabLogReader(msg.sab, onLine);
+    const reader = new SabLineReader(msg.sab, onRecord);
     attachedReaders.set(msg.producerId, reader);
     reader.start();
 }
@@ -209,7 +239,10 @@ function init(msg: InitMsg): void {
         sync: false,
         minLength: 4096,
         periodicFlush: 1000,
+        // Records arrive as SAB slices; buffer mode avoids a decode/re-encode per line.
+        contentMode: "buffer",
     });
+    sonicBuf = sonic as unknown as BufferSink;
     sonic.on("error", (err) => {
         try { sonic?.reopen(); } catch {
             try { process.stderr.write(`{"level":60,"msg":"central sonic error: ${String(err)}"}\n`); } catch { /* ignore */ }

@@ -7,7 +7,6 @@ import {extractLevel} from "./pino_level";
 
 export const DEFAULT_LOG_SAB_DATA_BYTES = 4 * 1024 * 1024;
 
-const SCRATCH_BYTES = 64 * 1024;
 const DROP_REPORT_INTERVAL_MS = 1000;
 const WARN_LEVEL = 40;
 
@@ -27,7 +26,7 @@ export class SabLogWriter implements DestinationStream {
     private dropTimer: NodeJS.Timeout | null = null;
 
     constructor(opts: SabLogWriterOpts) {
-        this.line = new SabLineWriter(opts.sab, {scratchBytes: SCRATCH_BYTES});
+        this.line = new SabLineWriter(opts.sab);
         this.producerId = opts.producerId;
         this.fallbackPort = opts.fallbackPort;
         this.fallbackOnFull = opts.fallbackOnFull;
@@ -35,12 +34,14 @@ export class SabLogWriter implements DestinationStream {
     }
 
     write(line: string): void {
-        if (this.line.tryWrite(line)) return;
-        this.onFull(line);
+        // pino hands us a string only; parsing level here lets the consumer filter
+        // before decoding anything.
+        const level = extractLevel(line);
+        if (this.line.tryWrite(line, level)) return;
+        this.onFull(line, level);
     }
 
-    private onFull(line: string): void {
-        const level = extractLevel(line);
+    private onFull(line: string, level: number): void {
         if (this.fallbackOnFull === "warn+" && level >= WARN_LEVEL) {
             try { this.fallbackPort.postMessage(line); } catch { /* ignore */ }
             return;
